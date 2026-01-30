@@ -614,6 +614,31 @@ RULES:
         throw new Error(`Invalid Bedrock API response: ${JSON.stringify(result).slice(0, 200)}`)
       }
       content = result.output.message.content[0].text.trim()
+    } else if (provider === 'github') {
+      console.log('[ASC Translation] Calling GitHub Models...')
+      const response = await fetch('https://models.inference.ai.azure.com/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: systemMessage },
+            { role: 'user', content: userMessage }
+          ],
+          max_tokens: 4096
+        })
+      })
+
+      const result = await response.json()
+      console.log('[ASC Translation] GitHub Models response:', result.error ? result.error : 'OK')
+      if (result.error) throw new Error(result.error.message || JSON.stringify(result.error))
+      if (!result.choices?.[0]?.message?.content) {
+        throw new Error(`Invalid GitHub Models API response: ${JSON.stringify(result).slice(0, 200)}`)
+      }
+      content = result.choices[0].message.content.trim()
     } else {
       throw new Error(`Unknown provider: ${provider}`)
     }
