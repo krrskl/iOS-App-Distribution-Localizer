@@ -1,0 +1,127 @@
+import { useState, useEffect } from 'react'
+import { testApiConnection, PROVIDERS } from '../services/translationService'
+import {
+  PROVIDER_CONFIG_KEY,
+  ASC_CONFIG_KEY,
+  ACTIVE_PAGE_KEY,
+  WELCOME_SHOWN_KEY
+} from '../constants'
+
+export function useAppState(addLog) {
+  const [showWelcome, setShowWelcome] = useState(() => {
+    return !sessionStorage.getItem(WELCOME_SHOWN_KEY)
+  })
+
+  const handleWelcomeComplete = () => {
+    sessionStorage.setItem(WELCOME_SHOWN_KEY, 'true')
+    setShowWelcome(false)
+  }
+
+  const [activePage, setActivePage] = useState(() => {
+    return localStorage.getItem(ACTIVE_PAGE_KEY) || 'xcstrings'
+  })
+
+  useEffect(() => {
+    localStorage.setItem(ACTIVE_PAGE_KEY, activePage)
+  }, [activePage])
+
+  const [providerConfig, setProviderConfig] = useState(() => {
+    const saved = localStorage.getItem(PROVIDER_CONFIG_KEY)
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved)
+        if (parsed.apiKey && !parsed.apiKeys) {
+          parsed.apiKeys = { [parsed.provider]: parsed.apiKey }
+          delete parsed.apiKey
+        }
+        const provider = PROVIDERS[parsed.provider] ? parsed.provider : 'openai'
+        return {
+          provider,
+          apiKeys: parsed.apiKeys || {},
+          models: parsed.models || {},
+          region: parsed.region || 'us-east-1',
+          endpoint: parsed.endpoint || '',
+          serviceTier: parsed.serviceTier || 'auto'
+        }
+      } catch { /* ignore */ }
+    }
+    return { provider: 'openai', apiKeys: {}, models: {}, region: 'us-east-1', endpoint: '', serviceTier: 'auto' }
+  })
+
+  const [ascCredentials, setAscCredentials] = useState(() => {
+    const saved = localStorage.getItem(ASC_CONFIG_KEY)
+    let creds = { keyId: '', issuerId: '', privateKey: '' }
+    if (saved) {
+      try {
+        creds = JSON.parse(saved)
+      } catch { /* ignore */ }
+    }
+    return creds
+  })
+
+  const [gpCredentials, setGpCredentials] = useState(() => {
+    return { serviceAccountJson: '' }
+  })
+
+  const currentApiKey = providerConfig.apiKeys[providerConfig.provider] || ''
+  const currentModel = providerConfig.models[providerConfig.provider] || PROVIDERS[providerConfig.provider].defaultModel
+
+  const [isTesting, setIsTesting] = useState(false)
+  const [testResult, setTestResult] = useState(null)
+
+  useEffect(() => {
+    localStorage.setItem(PROVIDER_CONFIG_KEY, JSON.stringify(providerConfig))
+  }, [providerConfig])
+
+  useEffect(() => {
+    const toSave = { keyId: ascCredentials.keyId, issuerId: ascCredentials.issuerId, privateKey: '' }
+    localStorage.setItem(ASC_CONFIG_KEY, JSON.stringify(toSave))
+  }, [ascCredentials.keyId, ascCredentials.issuerId])
+
+  const handleTestConnection = async () => {
+    if (!currentApiKey) {
+      setTestResult({ success: false, message: 'Please enter an API key first' })
+      return
+    }
+
+    setIsTesting(true)
+    setTestResult(null)
+
+    const config = {
+      provider: providerConfig.provider,
+      apiKey: currentApiKey,
+      model: currentModel,
+      region: providerConfig.region,
+      endpoint: providerConfig.endpoint || PROVIDERS[providerConfig.provider]?.placeholder || '',
+      serviceTier: providerConfig.serviceTier || 'auto'
+    }
+
+    const result = await testApiConnection(config)
+    setTestResult(result)
+    setIsTesting(false)
+
+    if (result.success) {
+      addLog(`${PROVIDERS[providerConfig.provider].name} API test successful!`, 'success')
+    } else {
+      addLog(`${PROVIDERS[providerConfig.provider].name} API test failed: ${result.message}`, 'error')
+    }
+  }
+
+  return {
+    showWelcome,
+    handleWelcomeComplete,
+    activePage,
+    setActivePage,
+    providerConfig,
+    setProviderConfig,
+    ascCredentials,
+    setAscCredentials,
+    gpCredentials,
+    setGpCredentials,
+    currentApiKey,
+    currentModel,
+    isTesting,
+    testResult,
+    handleTestConnection,
+  }
+}
