@@ -18,7 +18,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { translateStrings, testApiConnection, SUPPORTED_LANGUAGES, PROVIDERS, DEFAULT_CONCURRENT_REQUESTS, DEFAULT_TEXTS_PER_BATCH } from './services/translationService'
 import { parseXCStrings, generateXCStrings, getTranslationStats } from './utils/xcstringsParser'
-import AppStoreConnect from './components/AppStoreConnect'
+import AppStoreConnect from './components/appstore'
 import GooglePlayConnect from './components/GooglePlayConnect'
 import { AppSidebar } from './components/AppSidebar'
 import ScreenshotMaker from './components/ScreenshotMaker'
