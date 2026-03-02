@@ -18,8 +18,8 @@ import ASOKeywordsCard from './ASOKeywordsCard'
 import ScreenshotsCard from './ScreenshotsCard'
 import TranslationCard from './TranslationCard'
 
-export default function AppStoreConnect({ credentials, onCredentialsChange, aiConfig }) {
-  const hook = useAppStoreConnect({ credentials, onCredentialsChange, aiConfig })
+export default function AppStoreConnect({ credentials, onCredentialsChange, aiConfig, astroConfig }) {
+  const hook = useAppStoreConnect({ credentials, onCredentialsChange, aiConfig, astroConfig })
 
   return (
     <div className="space-y-8">
@@ -102,6 +102,10 @@ export default function AppStoreConnect({ credentials, onCredentialsChange, aiCo
           setEditedKeywords={hook.setEditedKeywords}
           isSavingKeywords={hook.isSavingKeywords}
           currentAiApiKey={hook.currentAiApiKey}
+          astroEnabled={astroConfig?.enabled}
+          astroSuggestions={hook.astroSuggestions}
+          onAstroSuggestionsClose={() => hook.setAstroSuggestions(null)}
+          onApplyAstroSuggestions={hook.handleApplyAstroSuggestions}
           handleGenerateASOKeywords={hook.handleGenerateASOKeywords}
           toggleAsoLocale={hook.toggleAsoLocale}
           startEditingKeywords={hook.startEditingKeywords}

@@ -28,7 +28,7 @@ import { decrypt } from '@/utils/crypto'
 
 const ENCRYPTED_KEY_STORAGE = 'asc-encrypted-p8-key'
 
-export default function useAppStoreConnect({ credentials, onCredentialsChange, aiConfig }) {
+export default function useAppStoreConnect({ credentials, onCredentialsChange, aiConfig, astroConfig }) {
   const [isConnecting, setIsConnecting] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState(null)
   const [sessionTimeLeft, setSessionTimeLeft] = useState(0)
@@ -151,6 +151,7 @@ export default function useAppStoreConnect({ credentials, onCredentialsChange, a
   const [editingKeywordsFor, setEditingKeywordsFor] = useState(null)
   const [editedKeywords, setEditedKeywords] = useState('')
   const [isSavingKeywords, setIsSavingKeywords] = useState(false)
+  const [astroSuggestions, setAstroSuggestions] = useState(null)
 
   const [screenshotsByLocale, setScreenshotsByLocale] = useState({})
   const [isLoadingScreenshots, setIsLoadingScreenshots] = useState(false)
@@ -387,35 +388,132 @@ export default function useAppStoreConnect({ credentials, onCredentialsChange, a
     return (!loc.whatsNew && prevLoc.whatsNew) || (!loc.promotionalText && prevLoc.promotionalText)
   })
 
-  const handleGenerateASOKeywords = async (locale) => {
-    if (!currentAiApiKey) {
-      addLog('Please configure your AI provider API key', 'error')
-      return
+  const cleanAndTruncateKeywords = (raw) => {
+    let cleaned = raw
+      .replace(/^["']|["']$/g, '')
+      .replace(/\n/g, ',')
+      .replace(/\s*,\s*/g, ',')
+      .replace(/,+/g, ',')
+      .replace(/^,|,$/g, '')
+      .trim()
+
+    if (cleaned.length > 100) {
+      const parts = cleaned.split(',')
+      cleaned = ''
+      for (const kw of parts) {
+        const newLength = cleaned ? cleaned.length + 1 + kw.length : kw.length
+        if (newLength <= 100) {
+          cleaned = cleaned ? `${cleaned},${kw}` : kw
+        } else {
+          break
+        }
+      }
     }
+    return cleaned
+  }
 
-    const localization = versionLocalizations.find(l => l.locale === locale)
-    if (!localization) {
-      addLog(`No localization found for ${locale}`, 'error')
-      return
-    }
+  const parseAstroSuggestions = (result) => {
+    if (!result?.content) return []
 
-    const description = localization.description || versionLocalizations.find(l => l.locale === sourceLocale)?.description
-    if (!description) {
-      addLog(`No description found to generate keywords from`, 'error')
-      return
-    }
+    const text = result.content
+      .filter(c => c.type === 'text')
+      .map(c => c.text)
+      .join('')
 
-    const localeInfo = ASC_LOCALES.find(l => l.code === locale)
-    const localeName = localeInfo?.name || locale
-    const country = localeInfo?.country || localeName
-
-    setGeneratingKeywordsFor(locale)
-    addLog(`Generating optimized keywords for ${localeName}...`, 'info')
+    if (!text) return []
 
     try {
-      const { translateText } = await import('@/services/translationService')
+      const data = JSON.parse(text)
+      if (!Array.isArray(data)) return []
 
-      const asoPrompt = `You are an App Store Optimization (ASO) expert. Generate keywords for an iOS/macOS app.
+      return data
+        .map(item => ({
+          keyword: item.text,
+          popularity: item.popularity ?? null,
+          difficulty: item.difficulty ?? null,
+          appsCount: item.appsCount ?? null,
+          store: item.store ?? null,
+          selected: false,
+        }))
+        .filter(s => s.keyword && s.keyword.length > 0)
+        .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
+    } catch {
+      return []
+    }
+  }
+
+  const fetchAstroSuggestions = async (locale, localization, localeName) => {
+    if (!astroConfig?.enabled || !selectedApp) return false
+
+    try {
+      const { getKeywordSuggestions } = await import('@/services/astroService')
+      const store = locale.split('-').pop()?.toLowerCase() || 'us'
+      addLog(`Fetching Astro suggestions for ${localeName} (${store})...`, 'info')
+      const result = await getKeywordSuggestions(selectedApp.id, store, astroConfig.port || 8089)
+
+      const suggestions = parseAstroSuggestions(result)
+      if (suggestions.length === 0) return false
+
+      const currentKeywords = (localization.keywords || '').split(',').map(k => k.trim()).filter(Boolean)
+      for (const s of suggestions) {
+        s.selected = false
+        s.existing = currentKeywords.some(k => k.toLowerCase() === s.keyword.toLowerCase())
+      }
+
+      setAstroSuggestions({
+        locale,
+        localeName,
+        localizationId: localization.id,
+        currentKeywords: localization.keywords || '',
+        suggestions
+      })
+      addLog(`Astro returned ${suggestions.length} keyword suggestions for ${localeName}`, 'success')
+      return true
+    } catch (error) {
+      addLog(`Astro unavailable for ${localeName}, falling back to AI: ${error.message}`, 'info')
+      return false
+    }
+  }
+
+  const handleApplyAstroSuggestions = async (selectedKeywords) => {
+    if (!astroSuggestions) return
+
+    const { localizationId, currentKeywords, localeName } = astroSuggestions
+    const existing = currentKeywords ? currentKeywords.split(',').map(k => k.trim()).filter(Boolean) : []
+    const merged = [...existing]
+
+    for (const kw of selectedKeywords) {
+      if (!merged.some(m => m.toLowerCase() === kw.toLowerCase())) {
+        merged.push(kw)
+      }
+    }
+
+    const cleaned = cleanAndTruncateKeywords(merged.join(','))
+    const charCount = cleaned.length
+
+    try {
+      setIsSavingKeywords(true)
+      await updateVersionLocalization(credentials, localizationId, { keywords: cleaned })
+      addLog(`Applied Astro keywords for ${localeName} (${charCount}/100 chars): ${cleaned}`, 'success')
+
+      const versionLocs = await getVersionLocalizations(credentials, selectedVersion.id)
+      setVersionLocalizations(versionLocs)
+    } catch (error) {
+      addLog(`Error saving keywords: ${error.message}`, 'error')
+    }
+
+    setIsSavingKeywords(false)
+    setAstroSuggestions(null)
+  }
+
+  const generateKeywordsWithAI = async (locale, localization, localeName, country, description) => {
+    if (!currentAiApiKey) {
+      throw new Error('No AI API key configured')
+    }
+
+    const { translateText } = await import('@/services/translationService')
+
+    const asoPrompt = `You are an App Store Optimization (ASO) expert. Generate keywords for an iOS/macOS app.
 
 CRITICAL: You MUST use between 95-100 characters total (including commas). This is mandatory - do not use less than 95 characters.
 
@@ -438,40 +536,61 @@ IMPORTANT: Count your characters! You have 100 max, use at least 95. Add more ke
 
 Respond with ONLY the keywords, nothing else:`
 
-      const config = {
-        provider: aiConfig.provider,
-        apiKey: currentAiApiKey,
-        model: currentAiModel,
-        region: aiConfig.region,
-        endpoint: aiConfig.endpoint
-      }
+    const config = {
+      provider: aiConfig.provider,
+      apiKey: currentAiApiKey,
+      model: currentAiModel,
+      region: aiConfig.region,
+      endpoint: aiConfig.endpoint
+    }
 
-      const generatedKeywords = await translateText(asoPrompt, 'en-US', locale, config)
+    const generatedKeywords = await translateText(asoPrompt, 'en-US', locale, config)
+    if (!generatedKeywords) throw new Error('No keywords generated from AI')
 
-      if (!generatedKeywords) {
-        throw new Error('No keywords generated from AI')
-      }
+    return cleanAndTruncateKeywords(generatedKeywords)
+  }
 
-      let cleanedKeywords = generatedKeywords
-        .replace(/^["']|["']$/g, '')
-        .replace(/\n/g, ',')
-        .replace(/\s*,\s*/g, ',')
-        .replace(/,+/g, ',')
-        .replace(/^,|,$/g, '')
-        .trim()
+  const handleGenerateASOKeywords = async (locale, source) => {
+    const localization = versionLocalizations.find(l => l.locale === locale)
+    if (!localization) {
+      addLog(`No localization found for ${locale}`, 'error')
+      return
+    }
 
-      if (cleanedKeywords.length > 100) {
-        const keywords = cleanedKeywords.split(',')
-        cleanedKeywords = ''
-        for (const kw of keywords) {
-          const newLength = cleanedKeywords ? cleanedKeywords.length + 1 + kw.length : kw.length
-          if (newLength <= 100) {
-            cleanedKeywords = cleanedKeywords ? `${cleanedKeywords},${kw}` : kw
-          } else {
-            break
-          }
+    const localeInfo = ASC_LOCALES.find(l => l.code === locale)
+    const localeName = localeInfo?.name || locale
+    const country = localeInfo?.country || localeName
+
+    setGeneratingKeywordsFor(locale)
+
+    try {
+      if (source !== 'ai') {
+        const usedAstro = await fetchAstroSuggestions(locale, localization, localeName)
+        if (usedAstro) {
+          setGeneratingKeywordsFor(null)
+          return
+        }
+        if (source === 'astro') {
+          addLog(`Astro unavailable for ${localeName}`, 'error')
+          setGeneratingKeywordsFor(null)
+          return
         }
       }
+
+      addLog(`Generating AI keywords for ${localeName}...`, 'info')
+
+      if (!currentAiApiKey) {
+        addLog('Please configure your AI provider API key', 'error')
+        setGeneratingKeywordsFor(null)
+        return
+      }
+      const description = localization.description || versionLocalizations.find(l => l.locale === sourceLocale)?.description
+      if (!description) {
+        addLog(`No description found to generate keywords from`, 'error')
+        setGeneratingKeywordsFor(null)
+        return
+      }
+      const cleanedKeywords = await generateKeywordsWithAI(locale, localization, localeName, country, description)
 
       const charCount = cleanedKeywords.length
       if (charCount < 95) {
@@ -1246,6 +1365,9 @@ ${sourceLoc.subtitle ? `Subtitle: ${sourceLoc.subtitle}` : ''}`
     editedKeywords,
     setEditedKeywords,
     isSavingKeywords,
+    astroSuggestions,
+    setAstroSuggestions,
+    handleApplyAstroSuggestions,
     screenshotsByLocale,
     isLoadingScreenshots,
     expandedScreenshotLocales,

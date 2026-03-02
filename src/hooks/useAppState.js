@@ -3,6 +3,7 @@ import { testApiConnection, PROVIDERS } from '../services/translationService'
 import {
   PROVIDER_CONFIG_KEY,
   ASC_CONFIG_KEY,
+  ASTRO_CONFIG_KEY,
   ACTIVE_PAGE_KEY,
   WELCOME_SHOWN_KEY
 } from '../constants'
@@ -63,6 +64,14 @@ export function useAppState(addLog) {
     return { serviceAccountJson: '' }
   })
 
+  const [astroConfig, setAstroConfig] = useState(() => {
+    const saved = localStorage.getItem(ASTRO_CONFIG_KEY)
+    if (saved) {
+      try { return JSON.parse(saved) } catch { /* ignore */ }
+    }
+    return { enabled: false, port: 8089 }
+  })
+
   const currentApiKey = providerConfig.apiKeys[providerConfig.provider] || ''
   const currentModel = providerConfig.models[providerConfig.provider] || PROVIDERS[providerConfig.provider].defaultModel
 
@@ -77,6 +86,10 @@ export function useAppState(addLog) {
     const toSave = { keyId: ascCredentials.keyId, issuerId: ascCredentials.issuerId, privateKey: '' }
     localStorage.setItem(ASC_CONFIG_KEY, JSON.stringify(toSave))
   }, [ascCredentials.keyId, ascCredentials.issuerId])
+
+  useEffect(() => {
+    localStorage.setItem(ASTRO_CONFIG_KEY, JSON.stringify(astroConfig))
+  }, [astroConfig])
 
   const handleTestConnection = async () => {
     if (!currentApiKey) {
@@ -118,6 +131,8 @@ export function useAppState(addLog) {
     setAscCredentials,
     gpCredentials,
     setGpCredentials,
+    astroConfig,
+    setAstroConfig,
     currentApiKey,
     currentModel,
     isTesting,

@@ -58,12 +58,17 @@ export function AppSidebar({
   ascCredentials,
   onAscCredentialsChange,
   gpCredentials,
-  onGpCredentialsChange
+  onGpCredentialsChange,
+  astroConfig,
+  onAstroConfigChange
 }) {
   const { theme, setTheme } = useTheme()
   const [isDraggingKey, setIsDraggingKey] = useState(false)
   const [isDraggingGpKey, setIsDraggingGpKey] = useState(false)
   const [aiSettingsOpen, setAiSettingsOpen] = useState(true)
+  const [astroSettingsOpen, setAstroSettingsOpen] = useState(false)
+  const [astroTesting, setAstroTesting] = useState(false)
+  const [astroTestResult, setAstroTestResult] = useState(null)
   const [ascSettingsOpen, setAscSettingsOpen] = useState(true)
   const [gpSettingsOpen, setGpSettingsOpen] = useState(false)
 
@@ -666,6 +671,82 @@ export function AppSidebar({
                       <span className="text-xs font-medium">API key required</span>
                     </div>
                   )}
+                </div>
+              </SidebarGroupContent>
+            </CollapsibleContent>
+          </SidebarGroup>
+        </Collapsible>
+
+        <SidebarSeparator className="my-4 opacity-50 group-data-[collapsible=icon]:hidden" />
+
+        {/* Astro ASO Settings */}
+        <Collapsible open={astroSettingsOpen} onOpenChange={setAstroSettingsOpen} className="group-data-[collapsible=icon]:hidden">
+          <SidebarGroup>
+            <SidebarGroupLabel asChild>
+              <CollapsibleTrigger className="flex w-full items-center justify-between px-2 py-2 rounded-xl hover:bg-muted/50 transition-colors [&[data-state=open]>svg]:rotate-180">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-500/10">
+                    <TrendingUp className="h-4 w-4 text-orange-500" />
+                  </div>
+                  <span className="text-sm font-semibold">Astro ASO</span>
+                  {astroConfig?.enabled && (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-orange-500/10 text-orange-500 border-0">ON</Badge>
+                  )}
+                </div>
+                <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200" />
+              </CollapsibleTrigger>
+            </SidebarGroupLabel>
+            <CollapsibleContent>
+              <SidebarGroupContent className="px-2 pt-3 space-y-4">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs text-muted-foreground">Enable Astro</Label>
+                    <button
+                      onClick={() => onAstroConfigChange(prev => ({ ...prev, enabled: !prev.enabled }))}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${astroConfig?.enabled ? 'bg-orange-500' : 'bg-muted-foreground/30'}`}
+                    >
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${astroConfig?.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Port</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="65535"
+                      value={astroConfig?.port || 8089}
+                      onChange={(e) => onAstroConfigChange(prev => ({ ...prev, port: parseInt(e.target.value) || 8089 }))}
+                      className="h-8 text-sm"
+                      placeholder="8089"
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full h-8 text-xs"
+                    disabled={astroTesting}
+                    onClick={async () => {
+                      setAstroTesting(true)
+                      setAstroTestResult(null)
+                      const { testAstroConnection } = await import('@/services/astroService')
+                      const result = await testAstroConnection(astroConfig?.port || 8089)
+                      setAstroTestResult(result)
+                      setAstroTesting(false)
+                    }}
+                  >
+                    {astroTesting ? (
+                      <><Loader2 className="h-3 w-3 animate-spin mr-1.5" />Testing...</>
+                    ) : 'Test Connection'}
+                  </Button>
+                  {astroTestResult && (
+                    <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium ${astroTestResult.success ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+                      {astroTestResult.success ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                      {astroTestResult.message}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">
+                    Connect to Astro for keyword suggestions. Open Astro → Settings → MCP Server to enable.
+                  </p>
                 </div>
               </SidebarGroupContent>
             </CollapsibleContent>

@@ -122,6 +122,11 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api\/itunes/, ''),
         secure: true,
       },
+      '/api/astro': {
+        target: 'http://127.0.0.1:8089',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/astro/, ''),
+      },
     },
   },
 })
